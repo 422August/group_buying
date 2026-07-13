@@ -144,7 +144,7 @@ Open this file directly in your browser:
 
 ## License
 
-MIT
+GPL-v3
 
 ---
 
