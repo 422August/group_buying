@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Counter (Web Version)</title>
+    <style>
+        :root {
+            --primary-color: #4a90e2;
+            --bg-color: #f4f4f9;
+            --card-bg: #ffffff;
+            --text-color: #333;
+        }
+
+        body {
+            font-family: "Segoe UI", "Microsoft JhengHei", sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            background-color: var(--card-bg);
+            width: 100%;
+            max-width: 600px;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        h2 {
+            text-align: center;
+            margin-top: 0;
+            color: var(--primary-color);
+        }
+
+        label.section-title {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        textarea {
+            width: 100%;
+            height: 150px;
+            padding: 10px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 16px;
+            resize: vertical;
+            margin-bottom: 15px;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+            padding: 10px;
+            background-color: #eee;
+            border-radius: 5px;
+        }
+
+        .radio-group {
+            display: flex;
+            gap: 15px;
+        }
+
+        .radio-group label {
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+        }
+
+        .buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button.btn-calc {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        button.btn-calc:hover {
+            background-color: #357abd;
+        }
+
+        button.btn-copy {
+            background-color: #28a745;
+            color: white;
+        }
+
+        button.btn-copy:hover {
+            background-color: #218838;
+        }
+
+        button.btn-clear {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        button.btn-clear:hover {
+            background-color: #c82333;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: center;
+        }
+
+        th {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #333;
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 5px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+        }
+
+        .toast.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <h2>Order Counter</h2>
+
+        <label class="section-title" for="inputText">請輸入留言資料：</label>
+        <textarea id="inputText" placeholder="例如：A+1, B 2, C*3..."></textarea>
+
+        <div class="controls">
+            <div class="radio-group">
+                <label>
+                    <input type="radio" name="mode" value="product" checked>
+                    依產品統計 (A+1)
+                </label>
+                <label>
+                    <input type="radio" name="mode" value="total">
+                    僅計算 +n 總量
+                </label>
+            </div>
+        </div>
+
+        <div class="buttons">
+            <button class="btn-calc" onclick="calculateStatistics()">計算統計</button>
+            <button class="btn-copy" onclick="copyToClipboard()">複製結果</button>
+            <button class="btn-clear" onclick="clearAll()">清除</button>
+        </div>
+
+        <table id="resultTable">
+            <thead>
+                <tr>
+                    <th>產品</th>
+                    <th>數量</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- 結果將插入此處 -->
+            </tbody>
+        </table>
+    </div>
+
+    <div id="toast" class="toast">已複製到剪貼簿</div>
+
+    <script>
+        let orderCount = {};
+        let totalQty = 0;
+        let lastResultString = "";
+
+        function calculateStatistics() {
+            const inputEl = document.getElementById('inputText');
+            const tbody = document.querySelector('#resultTable tbody');
+            const mode = document.querySelector('input[name="mode"]:checked').value;
+
+            // 1. 取得輸入並進行 NFKC 正規化 (全形轉半形)
+            const rawText = inputEl.value;
+            const normalizedText = rawText.normalize('NFKC');
+
+            // 清空舊資料
+            tbody.innerHTML = '';
+            orderCount = {};
+            totalQty = 0;
+
+            if (mode === 'product') {
+                // 邏輯：找出 "字母" 接 "數字" (中間可有 + * 或空白)
+                // Python Regex: ([A-Za-z])\s*[\+\*]?\s*(\d+)
+                const regex = /([A-Za-z])\s*[\+\*]?\s*(\d+)/g;
+                let match;
+
+                while ((match = regex.exec(normalizedText)) !== null) {
+                    const letter = match[1].toUpperCase();
+                    const num = parseInt(match[2], 10);
+
+                    if (!orderCount[letter]) {
+                        orderCount[letter] = 0;
+                    }
+                    orderCount[letter] += num;
+                }
+
+                // 排序並顯示
+                const sortedKeys = Object.keys(orderCount).sort();
+
+                // 準備複製用的字串
+                let copyParts = [];
+
+                if (sortedKeys.length === 0) {
+                    // 無資料時不動作或顯示空
+                } else {
+                    sortedKeys.forEach(key => {
+                        const count = orderCount[key];
+                        copyParts.push(`${key}.${count}`);
+
+                        const row = tbody.insertRow();
+                        const cellProd = row.insertCell(0);
+                        const cellCount = row.insertCell(1);
+                        cellProd.textContent = key;
+                        cellCount.textContent = count;
+                    });
+                }
+                lastResultString = copyParts.join(",");
+
+            } else {
+                // Total Mode
+                // 邏輯：忽略產品代碼，只找 + 或 * 後面的數字
+                // Python Regex: [\+\*]\s*(\d+)
+                const regex = /[\+\*]\s*(\d+)/g;
+                let match;
+
+                while ((match = regex.exec(normalizedText)) !== null) {
+                    totalQty += parseInt(match[1], 10);
+                }
+
+                // 顯示結果
+                const row = tbody.insertRow();
+                const cellProd = row.insertCell(0);
+                const cellCount = row.insertCell(1);
+                cellProd.textContent = "TOTAL";
+                cellCount.textContent = totalQty;
+
+                lastResultString = totalQty.toString();
+            }
+        }
+
+        function copyToClipboard() {
+            // 確保有先計算，若無則先計算一次
+            if (!lastResultString && document.getElementById('inputText').value.trim() !== "") {
+                calculateStatistics();
+            }
+
+            if (!lastResultString && totalQty === 0 && Object.keys(orderCount).length === 0) {
+                return; // 沒東西可複製
+            }
+
+            navigator.clipboard.writeText(lastResultString).then(() => {
+                showToast("結果已複製！");
+            }).catch(err => {
+                console.error('複製失敗:', err);
+                alert("複製失敗，請手動選取複製。");
+            });
+        }
+
+        function clearAll() {
+            document.getElementById('inputText').value = "";
+            document.querySelector('#resultTable tbody').innerHTML = "";
+            orderCount = {};
+            totalQty = 0;
+            lastResultString = "";
+            showToast("已清除所有資料");
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2000);
+        }
+    </script>
+
+</body>
+
+</html>
