@@ -313,8 +313,7 @@ class OrderMessageGenerator(ctk.CTkFrame):
 
         # 依 flag (0=有訂購, 1=沒訂購) + 姓名 Unicode 排序
         sorted_names = sorted(
-            self.messages.keys(),
-            key=lambda n: (0 if has_order(n) else 1, n)
+            self.messages.keys(), key=lambda n: (0 if has_order(n) else 1, n)
         )
 
         # 更新 Listbox
@@ -325,7 +324,6 @@ class OrderMessageGenerator(ctk.CTkFrame):
                 self.order_listbox.itemconfig(idx, bg="black", fg="white")
 
         self.set_status("依產品排序完成")
-
 
     def export_messages(self):
         if not self.messages:
@@ -349,7 +347,6 @@ class OrderMessageGenerator(ctk.CTkFrame):
         except Exception as e:
             messagebox.showerror("錯誤", f"匯出訊息時發生錯誤：{str(e)}")
             self.set_status("訊息匯出失敗")
-
 
 
 # ---------------------- 主程式 ----------------------
