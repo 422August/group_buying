@@ -105,16 +105,16 @@ class App(tk.Tk):
         top_frame.pack(fill="x", padx=8, pady=4)
 
         ttk.Label(
-            top_frame, text="商品名稱：", font=("Microsoft JhengHei", 10, "bold")
+            top_frame, text="商品名稱：", font=("Microsoft JhengHei", 20, "bold")
         ).grid(row=0, column=0, sticky="w")
-        self.ent_item = ttk.Entry(top_frame, width=60, font=("Consolas", 10))
+        self.ent_item = ttk.Entry(top_frame, width=60, font=("Consolas", 20))
         self.ent_item.grid(row=0, column=1, sticky="w", padx=4)
 
         ttk.Label(
-            top_frame, text="貼文內容：", font=("Microsoft JhengHei", 10, "bold")
+            top_frame, text="貼文內容：", font=("Microsoft JhengHei", 20, "bold")
         ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
         self.txt_post = tk.Text(
-            top_frame, width=100, height=10, wrap="word", font=("Consolas", 10)
+            top_frame, width=100, height=10, wrap="word", font=("Consolas", 20)
         )
         self.txt_post.grid(row=2, column=0, columnspan=2, sticky="we", pady=(0, 6))
 
