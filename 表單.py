@@ -1,167 +1,159 @@
 #!/usr/bin/env python3
 # coding: utf-8
 """
-FB group-buy order-sheet generator · v2.6
-  • Supports automatic accumulation for the same customer when using the pattern “String+Number”.
-  • Global font family / size can be changed via constants at the top of the file.
+FB group-buy order-sheet generator · v2.8 (No Price Version)
 """
 
 import re
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-import tkinter.font as tkfont           # ← new import
-from collections import defaultdict, OrderedDict
+from collections import defaultdict
+from typing import Dict, Union, Optional, Any
 import pandas as pd
 
-# ── Global font settings ─────────────────────────────────────────────
-DEFAULT_FONT_FAMILY = "Segoe UI"        # Change to "Microsoft JhengHei" for Chinese UI, etc.
-DEFAULT_FONT_SIZE   = 14                # Adjust font size here
-APP_FONT = (DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE)
 
-# ── Regular expressions ─────────────────────────────────────────────
-RE_NAME_PLUS = re.compile(r'^([\u4e00-\u9fa5\u00C0-\u024F A-Za-z\s·\._-]+?)\s*[\+\*]\s*([0-9]+)\s*$')
-RE_NAME_LINE = re.compile(r'^[\u4e00-\u9fa5\u00C0-\u024F A-Za-z\s·\._-]+$')
-RE_PURE_NUM    = re.compile(r'^\s*\+?\s*([0-9]+)\s*$')
-RE_ANY_LETTER_PLUS = re.compile(r'[A-Za-z]\s*[\+\*]\s*\d+')
-RE_TIME        = re.compile(r'^\d+\s*(天|日|週|周|小時|分鐘)$')
-NOISE_WORDS    = {"回覆", "翻譯年糕"}
-RE_STR_QTY     = re.compile(r'^(.*?)(?:\s*)[\+\*]\s*(\d+)$')        # Generic “string+qty”
+# ── 業務邏輯與解析器 ───────────────────────────────────────────
+class OrderParser:
+    """處理留言解析與數量加總的邏輯類別"""
 
-# ── Sort keys ───────────────────────────────────────────────────────
-def buyer_key(name: str):
-    first = name.lstrip()[0]
-    return (0, name.casefold()) if first.isascii() and first.isalpha() else (1, name)
+    RE_NAME_PLUS = re.compile(
+        r"^([\u4e00-\u9fa5A-Za-zA-Z\s·\._-]+?)\s+\+\s*([0-9]+)\s*$"
+    )
+    RE_NAME_LINE = re.compile(r"^[\u4e00-\u9fa5A-Za-zA-Z\s·\._-]+$")
+    RE_PURE_NUM = re.compile(r"^\s*\+?\s*([0-9]+)\s*$")
+    RE_ANY_LETTER_PLUS = re.compile(r"[A-Za-z]\s*\+\s*\d+")
+    RE_TIME = re.compile(r"^\d+\s*(天|日|週|周|小時|分鐘)$")
+    NOISE_WORDS = {"回覆", "讚", "翻譯年糕", "·"}
 
-def item_key(item: str):
-    first = item.lstrip()[0]
-    return (0, item.casefold()) if first.isascii() and first.isalpha() else (1, item)
+    @classmethod
+    def parse(cls, text: str) -> Dict[str, Union[int, str]]:
+        buyers: Dict[str, Union[int, str]] = {}
+        current_name: Optional[str] = None
 
-# ── Parsing logic ───────────────────────────────────────────────────
-def parse_orders(text: str) -> dict[str, object]:
-    buyers = defaultdict(lambda: None)      # type: ignore
-    current: str | None = None              # remember current buyer name
+        for line in text.splitlines():
+            line = line.strip()
 
-    for raw in text.splitlines():
-        line = raw.strip()
+            if (
+                not line
+                or "已編輯" in line
+                or line in cls.NOISE_WORDS
+                or cls.RE_TIME.match(line)
+            ):
+                continue
 
-        # ── Noise filtering ──
-        if (not line or "已編輯" in line or line in NOISE_WORDS or RE_TIME.match(line)):
-            continue
+            if current_name:
+                cls._handle_qty_line(buyers, current_name, line)
+                current_name = None
+                continue
 
-        # Same-line “Name +2”
-        m = RE_NAME_PLUS.match(line)
-        if m:
-            _merge_val(buyers, m.group(1).strip(), int(m.group(2)))
-            current = None
-            continue
+            match_plus = cls.RE_NAME_PLUS.match(line)
+            if match_plus:
+                name, qty = match_plus.group(1).strip(), int(match_plus.group(2))
+                cls.merge_value(buyers, name, qty)
+                continue
 
-        # New buyer’s name line
-        if RE_NAME_LINE.match(line):
-            current = line
-            continue
+            if cls.RE_NAME_LINE.match(line):
+                current_name = line
 
-        # Quantity / combo line (may be multiple lines)
-        if current is not None:
-            _store_qty(buyers, current, line)
+        return buyers
 
-    return dict(buyers)
+    @classmethod
+    def _handle_qty_line(cls, buyers: Dict[str, Any], name: str, line: str) -> None:
+        match_num = cls.RE_PURE_NUM.match(line)
+        if match_num and not cls.RE_ANY_LETTER_PLUS.search(line):
+            cls.merge_value(buyers, name, int(match_num.group(1)))
+        else:
+            cls.merge_value(buyers, name, line)
 
-def _store_qty(buyers, name, line):
-    if RE_PURE_NUM.match(line) and not RE_ANY_LETTER_PLUS.search(line):
-        _merge_val(buyers, name, int(RE_PURE_NUM.match(line).group(1)))   # type: ignore
-    else:
-        _merge_val(buyers, name, line)
+    @staticmethod
+    def merge_value(
+        target_dict: Dict[str, Any], key: str, new_val: Union[int, str]
+    ) -> None:
+        old_val = target_dict.get(key)
+        if old_val in (None, ""):
+            target_dict[key] = new_val
+        elif isinstance(old_val, int) and isinstance(new_val, int):
+            target_dict[key] = old_val + new_val
+        else:
+            target_dict[key] = ",".join(
+                sorted({str(old_val).strip(), str(new_val).strip()})
+            )
 
-def _merge_val(dic, key, new):
-    """Merge `new` into dic[key]; auto-sum if both are numeric or share same prefix."""
-    old = dic.get(key)
 
-    # Two original cases remain the same
-    if old in (None, ''):
-        dic[key] = new
-        return
-    if isinstance(old, int) and isinstance(new, int):
-        dic[key] = old + new
-        return
+# ── 排序鍵 ─────────────────────────────────────────────
+def get_sort_key(text: str) -> tuple[int, str]:
+    """統一處理姓名與商品名稱的排序邏輯 (英文優先，中文在後)"""
+    first_char = text.lstrip()[0]
+    if first_char.isascii() and first_char.isalpha():
+        return (0, text.casefold())
+    return (1, text)
 
-    # New: handle “same prefix string+number” accumulation
-    s_old, s_new = str(old).strip(), str(new).strip()
-    m_old, m_new = RE_STR_QTY.match(s_old), RE_STR_QTY.match(s_new)
 
-    if m_old and m_new and m_old.group(1) == m_new.group(1):
-        qty_sum = int(m_old.group(2)) + int(m_new.group(2))
-        dic[key] = f"{m_old.group(1)}+{qty_sum}"
-    else:
-        # Different prefixes → deduplicate and join with space
-        dic[key] = " ".join(sorted({s_old, s_new}))
-
-# ── GUI application ─────────────────────────────────────────────────
+# ── GUI 應用程式 ──────────────────────────────────────────────
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("團購訂單表產生器")
-        self.geometry("920x580")
+        self.geometry("980x620")
 
-        # Apply global font to all Tk / ttk widgets
-        self.option_add("*Font", APP_FONT)
-        self._tune_tree_style()
-
-        # {buyer: {item: qty/str}}
-        self.data = defaultdict(lambda: OrderedDict())
-        self.df_display: pd.DataFrame | None = None
+        self.data: Dict[str, Dict[str, Any]] = defaultdict(dict)
+        self.df_display: Optional[pd.DataFrame] = None
         self._build_ui()
 
-    # Customise ttk.Treeview fonts and row height
-    def _tune_tree_style(self):
-        style = ttk.Style(self)
-        style.configure("Treeview",
-                        font=APP_FONT,
-                        rowheight=int(DEFAULT_FONT_SIZE * 1.8))
-        style.configure("Treeview.Heading",
-                        font=(DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE, "bold"))
-
-    # Build all widgets
     def _build_ui(self):
-        top = ttk.Frame(self)
-        top.pack(fill="x", padx=8, pady=4)
+        top_frame = ttk.Frame(self)
+        top_frame.pack(fill="x", padx=8, pady=4)
 
-        ttk.Label(top, text="商品名稱：").grid(row=0, column=0, sticky="w")
-        self.ent_item = ttk.Entry(top, width=26)
+        ttk.Label(
+            top_frame, text="商品名稱：", font=("Microsoft JhengHei", 10, "bold")
+        ).grid(row=0, column=0, sticky="w")
+        self.ent_item = ttk.Entry(top_frame, width=60, font=("Consolas", 10))
         self.ent_item.grid(row=0, column=1, sticky="w", padx=4)
 
-        ttk.Label(top, text="貼文內容：").grid(row=1, column=0, columnspan=2, sticky="w")
-        self.txt_post = tk.Text(top, width=80, height=10, wrap="word")
-        self.txt_post.grid(row=2, column=0, columnspan=2, sticky="we", pady=(0, 4))
+        ttk.Label(
+            top_frame, text="貼文內容：", font=("Microsoft JhengHei", 10, "bold")
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        self.txt_post = tk.Text(
+            top_frame, width=100, height=10, wrap="word", font=("Consolas", 10)
+        )
+        self.txt_post.grid(row=2, column=0, columnspan=2, sticky="we", pady=(0, 6))
 
-        btns = ttk.Frame(top)
-        btns.grid(row=3, column=0, columnspan=2, sticky="we")
-        ttk.Button(btns, text="新增商品", command=self.on_add).pack(side="left", padx=4)
-        ttk.Button(btns, text="匯出 Excel", command=self.on_export).pack(side="left", padx=4)
+        btn_frame = ttk.Frame(top_frame)
+        btn_frame.grid(row=3, column=0, columnspan=2, sticky="we")
+        ttk.Button(btn_frame, text="新增商品", command=self.on_add).pack(
+            side="left", padx=6
+        )
+        ttk.Button(btn_frame, text="匯出 Excel", command=self.on_export).pack(
+            side="left", padx=6
+        )
 
-        tblfrm = ttk.Frame(self)
-        tblfrm.pack(fill="both", expand=True, padx=8, pady=4)
-        self.tree = ttk.Treeview(tblfrm, show="headings")
-        vsb = ttk.Scrollbar(tblfrm, orient="vertical", command=self.tree.yview)
-        hsb = ttk.Scrollbar(tblfrm, orient="horizontal", command=self.tree.xview)
+        table_frame = ttk.Frame(self)
+        table_frame.pack(fill="both", expand=True, padx=8, pady=4)
+        self.tree = ttk.Treeview(table_frame, show="headings")
+        vsb = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
+        hsb = ttk.Scrollbar(table_frame, orient="horizontal", command=self.tree.xview)
         self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
         self.tree.pack(side="left", fill="both", expand=True)
         vsb.pack(side="right", fill="y")
         hsb.pack(side="bottom", fill="x")
 
-    # ── Callbacks ───────────────────────────────────────────────────
     def on_add(self):
-        item = self.ent_item.get().strip()
-        if not item:
+        item_name = self.ent_item.get().strip()
+
+        if not item_name:
             messagebox.showwarning("缺少商品名稱", "請輸入『商品名稱』")
             return
 
-        buyers = parse_orders(self.txt_post.get("1.0", "end"))
-        if not buyers:
+        raw_text = self.txt_post.get("1.0", "end")
+        parsed_buyers = OrderParser.parse(raw_text)
+
+        if not parsed_buyers:
             messagebox.showwarning("無符合格式", "找不到任何有效訂購資訊")
             return
 
-        for buyer, val in buyers.items():
-            _merge_val(self.data[buyer], item, val)
+        for buyer, val in parsed_buyers.items():
+            OrderParser.merge_value(self.data[buyer], item_name, val)
 
         self.ent_item.delete(0, "end")
         self.txt_post.delete("1.0", "end")
@@ -171,40 +163,43 @@ class App(tk.Tk):
         if self.df_display is None or self.df_display.empty:
             messagebox.showwarning("無資料", "目前沒有可匯出的資料")
             return
-        path = filedialog.asksaveasfilename(defaultextension=".xlsx",
-                                            filetypes=[("Excel 活頁簿", "*.xlsx")])
-        if path:
-            self._export_df().to_excel(path, index=False)
-            messagebox.showinfo("已匯出", f"檔案已儲存至：\n{path}")
 
-    # ── Helpers ────────────────────────────────────────────────────
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx", filetypes=[("Excel 活頁簿", "*.xlsx")]
+        )
+
+        if file_path:
+            self._get_export_df().to_excel(file_path, index=False)
+            messagebox.showinfo("已匯出", f"檔案已儲存至：\n{file_path}")
+
     def _refresh_tree(self):
-        items = sorted({it for od in self.data.values() for it in od}, key=item_key)
-        buyers = sorted(self.data.keys(), key=buyer_key)
+        all_items = sorted(
+            {item for orders in self.data.values() for item in orders}, key=get_sort_key
+        )
+        all_buyers = sorted(self.data.keys(), key=get_sort_key)
 
-        rows = [dict(self.data[b]) for b in buyers]
-        df = pd.DataFrame(rows, index=buyers).reindex(columns=items).fillna("")
+        rows = [self.data[buyer] for buyer in all_buyers]
+        df = pd.DataFrame(rows, index=all_buyers).reindex(columns=all_items).fillna("")
         df.index.name = "姓名"
         df.reset_index(inplace=True)
         self.df_display = df
 
         self.tree.delete(*self.tree.get_children())
         self.tree["columns"] = list(df.columns)
+
         for col in df.columns:
             self.tree.heading(col, text=col)
-            self.tree.column(col, anchor="center",
-                             width=max(80, int(len(col) * 14)))
+            self.tree.column(col, anchor="center", width=max(100, int(len(col) * 14)))
+
         for _, row in df.iterrows():
             self.tree.insert("", "end", values=list(row))
 
-    def _export_df(self) -> pd.DataFrame:
-        if self.df_display is None:
-            raise ValueError("No DataFrame to export.")
+    def _get_export_df(self) -> pd.DataFrame:
         df = self.df_display.copy()
-        df.insert(0, 'Unnamed: 0', '')
-        df.rename(columns={'姓名': 'Unnamed: 1'}, inplace=True)
+        df.insert(0, "", "")
+        df.rename(columns={"姓名": ""}, inplace=True)
         return df
 
-# ── Entry point ────────────────────────────────────────────────────
+
 if __name__ == "__main__":
     App().mainloop()
