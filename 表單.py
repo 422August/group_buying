@@ -22,8 +22,13 @@ class OrderParser:
     RE_NAME_LINE = re.compile(r"^[\u4e00-\u9fa5A-Za-zA-Z\s·\._-]+$")
     RE_PURE_NUM = re.compile(r"^\s*\+?\s*([0-9]+)\s*$")
     RE_ANY_LETTER_PLUS = re.compile(r"[A-Za-z]\s*\+\s*\d+")
-    RE_TIME = re.compile(r"^\d+\s*(天|日|週|周|小時|分鐘)$")
-    NOISE_WORDS = {"回覆", "讚", "翻譯年糕", "·"}
+    RE_TIME = re.compile(
+        r"^("
+        r"\d+\s*(天|日|週|周|小時|分鐘)"
+        r"|\d{4}年\d{1,2}月\d{1,2}日(\s*星期[一二三四五六日天])?(\s*(上午|下午|中午|晚上|凌晨|傍晚)?\s*\d{1,2}:\d{2})?"
+        r")$"
+    )
+    NOISE_WORDS = {"回覆", "讚", "翻譯年糕", "·", "Facebook"}
 
     @classmethod
     def parse(cls, text: str) -> Dict[str, Union[int, str]]:
